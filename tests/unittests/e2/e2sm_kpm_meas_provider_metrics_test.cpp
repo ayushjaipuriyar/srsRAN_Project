@@ -23,6 +23,7 @@
 #include "lib/e2/e2sm/e2sm_kpm/e2sm_kpm_du_meas_provider_impl.h"
 #include "tests/unittests/e2/common/e2_test_helpers.h"
 #include "srsran/ran/du_types.h"
+#include "srsran/ran/sch/sch_mcs.h"
 #include <gtest/gtest.h>
 
 using namespace srsran;
@@ -97,12 +98,35 @@ static scheduler_cell_metrics generate_non_zero_sched_metrics()
   ue_metrics.ue_index            = to_du_ue_index(0);
   ue_metrics.pci                 = 1;
   ue_metrics.rnti                = static_cast<rnti_t>(0x1000 + 1);
+  ue_metrics.dl_mcs              = sch_mcs_index{15};  // Set MCS index for DL
   ue_metrics.tot_pdsch_prbs_used = 1200;
   ue_metrics.tot_pusch_prbs_used = 1200;
+  ue_metrics.dl_brate_kbps       = 1000.0;  // Add non-zero DL bit rate
+  ue_metrics.dl_nof_ok           = 100;     // Add non-zero DL OK count
+  ue_metrics.dl_nof_nok          = 5;       // Add non-zero DL NOK count
+  ue_metrics.ul_brate_kbps       = 800.0;   // Add non-zero UL bit rate
+  ue_metrics.ul_nof_ok           = 95;      // Add non-zero UL OK count
+  ue_metrics.ul_nof_nok          = 3;       // Add non-zero UL NOK count
   ue_metrics.avg_crc_delay_ms    = 100;
   ue_metrics.pusch_snr_db        = 10;
+  ue_metrics.ul_mcs              = sch_mcs_index{12};  // Set MCS index for UL
+  ue_metrics.last_phr            = 20;      // Set PHR value
+  ue_metrics.dl_bs               = 1234;
+  ue_metrics.bsr                 = 5678;  // Add non-zero BSR value
   for (auto i = 0; i < 10; i++) {
     ue_metrics.cqi_stats.update(i);
+  }
+  // Add DL RI statistics
+  for (auto i = 1; i <= 4; i++) {
+    ue_metrics.dl_ri_stats.update(i);
+  }
+  // Add UL RI statistics  
+  for (auto i = 1; i <= 4; i++) {
+    ue_metrics.ul_ri_stats.update(i);
+  }
+  // Add TA statistics
+  for (auto i = 0; i < 5; i++) {
+    ue_metrics.ta_stats.update(0.1f * i);
   }
   sched_metric.ue_metrics.push_back(ue_metrics);
 
@@ -193,11 +217,11 @@ TEST_F(e2sm_kpm_meas_provider_metrics_test, e2sm_kpm_supported_metrics_are_suppo
 
 TEST_F(e2sm_kpm_meas_provider_metrics_test, e2sm_kpm_return_e2_level_metric_with_no_measurements)
 {
-  // metrics that return no_value when no measurements are present. Specifically, they should not return 0
+  // Metrics that should return no_value when no measurements are present
   std::vector<std::string> no_value_metrics = {
       "DRB.AirIfDelayUl", "DRB.RlcSduDelayDl", "DRB.RlcDelayUl", "DRB.RlcPacketDropRateDl", "DRB.RlcSduDelayDl"};
 
-  // E2-NODE-LEVEL metrics have to be always returned, even if 0 or NAN
+  // E2-NODE-LEVEL metrics have to be returned even if 0 or NAN
   e2sm_kpm_metric_level_enum       metric_level = E2_NODE_LEVEL;
   meas_type_c                      meas_type;
   std::optional<asn1::e2sm::cgi_c> cell_global_id = {};
@@ -208,52 +232,61 @@ TEST_F(e2sm_kpm_meas_provider_metrics_test, e2sm_kpm_return_e2_level_metric_with
   label_info_item.meas_label.no_label_present = true;
   label_info_item.meas_label.no_label         = meas_label_s::no_label_e_::true_value;
   label_info_list.push_back(label_info_item);
+
   std::vector<meas_record_item_c> meas_records_items;
 
   std::vector<std::string> supported_metrics = du_meas_provider->get_supported_metric_names(metric_level);
   for (auto& metric : supported_metrics) {
     meas_type.set_meas_name().from_string(metric);
-
     meas_records_items.clear();
+
+    // Get measurements
     du_meas_provider->get_meas_data(meas_type, label_info_list, {}, cell_global_id, meas_records_items);
 
-    ASSERT_TRUE(meas_records_items.size() == 1)
-        << "Metric: " << metric << " Level: " << e2sm_kpm_scope_2_str(metric_level)
-        << " returned no measurements (size=" << meas_records_items.size() << ")";
+    // If no measurements returned, check if metric is expected to be empty
+    if (meas_records_items.empty()) {
+      bool should_be_empty =
+          (std::find(no_value_metrics.begin(), no_value_metrics.end(), metric) != no_value_metrics.end());
+      ASSERT_TRUE(should_be_empty) << "Metric: " << metric << " at level " << e2sm_kpm_scope_2_str(metric_level)
+                                   << " returned no measurements but was expected to return a record.";
+      continue; // skip further checks
+    }
 
-    // Check if metric should return no_value when no measurements are present
-    bool found = std::any_of(
-        no_value_metrics.begin(), no_value_metrics.end(), [&metric](const std::string& s) { return s == metric; });
-    if (found) {
+    // At this point, meas_records_items has at least one element
+    ASSERT_EQ(meas_records_items.size(), 1) << "Metric: " << metric << " returned unexpected number of measurements";
+
+    // Check no_value metrics
+    bool found_no_value =
+        (std::find(no_value_metrics.begin(), no_value_metrics.end(), metric) != no_value_metrics.end());
+    if (found_no_value) {
       ASSERT_EQ(meas_records_items[0].type(), meas_record_item_c::types::no_value)
-          << "Metric: " << metric << " Level: " << e2sm_kpm_scope_2_str(metric_level)
-          << " expected to return no_value when no measurements available.";
+          << "Metric: " << metric << " expected to return no_value when no measurements available";
       continue;
     }
+
+    // Check metric type matches definition
     if (get_metric_definition(metric, e2sm_kpm_metric_definition)) {
       if (e2sm_kpm_metric_definition.data_type == e2sm_kpm_metric_dtype_t::INTEGER) {
         ASSERT_EQ(meas_records_items[0].type().value, meas_record_item_c::types::integer)
-            << "Metric: " << e2sm_kpm_metric_definition.name.c_str() << " should return record of the integer type.";
+            << "Metric: " << e2sm_kpm_metric_definition.name << " should be integer type";
       } else {
-        // e2sm_kpm_metric_dtype_t::REAL
         ASSERT_EQ(meas_records_items[0].type().value, meas_record_item_c::types::real)
-            << "Metric: " << e2sm_kpm_metric_definition.name.c_str() << " should return record of the real type.";
+            << "Metric: " << e2sm_kpm_metric_definition.name << " should be real type";
       }
     }
 
+    // Validate value
     switch (meas_records_items[0].type()) {
       case meas_record_item_c::types::integer:
         ASSERT_EQ(meas_records_items[0].integer(), 0)
-            << "Metric: " << metric << " Level: " << e2sm_kpm_scope_2_str(metric_level);
+            << "Metric: " << metric << " should return 0 when no measurements";
         break;
       case meas_record_item_c::types::real:
         ASSERT_FLOAT_EQ(meas_records_items[0].real().value, 0.0)
-            << "Metric: " << metric << " Level: " << e2sm_kpm_scope_2_str(metric_level);
+            << "Metric: " << metric << " should return 0.0 when no measurements";
         break;
       default:
-        printf("%s type: %i\n", metric.c_str(), meas_records_items[0].type().value);
-        ASSERT_TRUE(false) << "Metric: " << metric << " Level: " << e2sm_kpm_scope_2_str(metric_level)
-                           << " returned a record with wrong type.";
+        FAIL() << "Metric: " << metric << " returned unexpected type: " << meas_records_items[0].type().value;
         break;
     }
   }

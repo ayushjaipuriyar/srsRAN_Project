@@ -85,7 +85,7 @@ private:
                                           const std::optional<asn1::e2sm::cgi_c>       cell_global_id,
                                           std::vector<asn1::e2sm::meas_record_item_c>& items);
 
-  typedef metric_meas_getter_func_t(e2sm_kpm_du_meas_provider_impl::*metric_meas_getter_func_ptr);
+  typedef metric_meas_getter_func_t(e2sm_kpm_du_meas_provider_impl::* metric_meas_getter_func_ptr);
 
   struct e2sm_kpm_supported_metric_t {
     uint32_t                    supported_labels;
@@ -113,6 +113,7 @@ private:
   metric_meas_getter_func_t get_prb_use_perc_dl;
   metric_meas_getter_func_t get_prb_use_perc_ul;
   metric_meas_getter_func_t get_delay_ul;
+  metric_meas_getter_func_t get_drb_ul_success_rate;
   metric_meas_getter_func_t get_drb_rlc_packet_drop_rate_dl;
   metric_meas_getter_func_t get_drb_rlc_sdu_transmitted_volume_dl;
   metric_meas_getter_func_t get_drb_rlc_sdu_transmitted_volume_ul;
@@ -122,6 +123,24 @@ private:
   metric_meas_getter_func_t get_drb_ul_rlc_sdu_latency;
   metric_meas_getter_func_t get_prach_cell_count;
 
+  // New metrics
+  metric_meas_getter_func_t                          get_pci;
+  metric_meas_getter_func_t                          get_rnti;
+  metric_meas_getter_func_t                          get_mcs_dl;
+  metric_meas_getter_func_t                          get_mcs_ul;
+  metric_meas_getter_func_t                          get_brate_dl;
+  metric_meas_getter_func_t                          get_brate_ul;
+  metric_meas_getter_func_t                          get_nof_ok_dl;
+  metric_meas_getter_func_t                          get_nof_nok_dl;
+  metric_meas_getter_func_t                          get_nof_ok_ul;
+  metric_meas_getter_func_t                          get_nof_nok_ul;
+  metric_meas_getter_func_t                          get_bsr;
+  metric_meas_getter_func_t                          get_dl_bs;
+  metric_meas_getter_func_t                          get_ta;
+  metric_meas_getter_func_t                          get_phr;
+  metric_meas_getter_func_t                          get_pusch_snr;
+  metric_meas_getter_func_t                          get_dl_ri;
+  metric_meas_getter_func_t                          get_ul_ri;
   srslog::basic_logger&                              logger;
   srs_du::f1ap_ue_id_translator&                     f1ap_ue_id_provider;
   unsigned                                           nof_cell_prbs;
